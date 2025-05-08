@@ -1,0 +1,48 @@
+from brownie import Contract, accounts, interface, network
+from web3 import Web3
+
+# Endereços do projeto Insignea
+ISN = "0xd8767e36196e164b7a37d0e2c84c54d5e302368a"
+POL = "0x0000000000000000000000000000000000001010"
+POOL_MANAGER = "0x6910c954E39e5Bb08B84b06d5E89DcF74F4f90BE"
+HOOK_ADDRESS = ISN  # o hook também está no mesmo endereço
+
+def main():
+    network.connect('mainnet')  # ou 'anvil' para testes locais
+    user = accounts.load("insignea_owner")  # sua conta local
+
+    amount_in = Web3.to_wei(0.1, "ether")  # valor POL a trocar
+
+    # Instanciar contratos
+    pol = interface.IERC20(POL)
+    isn = interface.IERC20(ISN)
+    pool_manager = Contract.from_explorer(POOL_MANAGER)
+
+    # Aprovar POL para swap
+    if pol.allowance(user, POOL_MANAGER) < amount_in:
+        print("Aprovando POL para o PoolManager...")
+        pol.approve(POOL_MANAGER, amount_in, {'from': user})
+
+    # hookData codifica o endereço do usuário (usado no Solidity)
+    hook_data = user.address.encode().rjust(32, b'\x00')
+
+    # Montar parâmetros
+    pool_key = (
+        POL,
+        ISN,
+        3000,        # taxa de 0.3%
+        HOOK_ADDRESS
+    )
+
+    swap_params = {
+        "zeroForOne": True,  # POL → ISN
+        "amountSpecified": -int(amount_in),  # vendendo POL
+        "sqrtPriceLimitX96": 0  # sem limite de preço
+    }
+
+    # Realizar swap
+    print("Realizando swap POL → ISN...")
+    tx = pool_manager.swap(pool_key, swap_params, hook_data, {'from': user})
+    print("Swap realizado! TX Hash:", tx.txid)
+
+    network.disconnect()
